@@ -1,0 +1,143 @@
+import logging
+from sys import exit
+import random
+
+def gf2_add(bit1, bit2):
+    # Mod2 addition = XOR
+    return int(bool(bit1) != bool(bit2))
+
+def gf2_mul(bit1, bit2):
+    # Mod2 multiplication = AND
+    return int(bool(bit1) and bool(bit2))
+
+def mul_vec_mat(vector, matrix):
+    # The matrix must have the same number of rows as the vector's length
+    if len(vector) != len(matrix):
+        raise ValueError("Wrong dimensions! Vector length %d must be the same as matrix rows %d" % (len(vector), len(matrix)))
+    
+    result = [0] * len(matrix[0])
+
+    matrix_rows_to_xor = [row for (idx, row) in enumerate(matrix) if vector[idx] == 1]
+    #print("Matrix rows to XOR: %s" % matrix_rows_to_xor)
+
+    for (colidx, elem) in enumerate(matrix[0]):
+        for row in matrix_rows_to_xor:
+            result[colidx] = gf2_add(result[colidx], row[colidx])
+        
+    return result
+
+
+def mul_mat_vec(matrix, vector):
+    # Matrix x Vector multiplication
+
+    # The matrix must have the same number of cols than the vector's rows
+    if len(matrix[0]) != len(vector):
+        raise ValueError("Wrong dimensions! Vector length %d must be the same as matrix columns %d" % (len(vector), len(matrix[0])))
+
+    result = [0] * len(matrix)
+    for (rowidx, row) in enumerate(matrix):
+        for (colidx, col) in enumerate(row):
+            result[rowidx] = gf2_add(result[rowidx], gf2_mul(col, vector[colidx]))
+    
+    return result
+
+# One possible generator matrix for Hamming(7,4)
+# This moves the 3 parity bits to the front of the codeword
+GENERATOR = [
+    [0,1,1, 1,0,0,0],
+    [1,0,1, 0,1,0,0],
+    [1,1,0, 0,0,1,0],
+    [1,1,1, 0,0,0,1]
+] 
+
+# The corresponding parity check matrix
+PARITY_CHECK = [
+    [1,0,0, 0,1,1,1],
+    [0,1,0, 1,0,1,1],
+    [0,0,1, 1,1,0,1]
+]
+
+def hamming_encode(message):
+    if len(message) != 4:
+        raise ValueError("Message must be 4 bits!")
+
+    # Encoding is simply multiplying the message with the generator matrix
+    return mul_vec_mat(message, GENERATOR)
+#
+
+def hamming_decode(codeword):
+    # Decode a potentially noisy codeword received after transmission
+    # The result will be correct if 0 or 1 bit of the codeword is corrupted.
+
+    syndrome = mul_mat_vec(PARITY_CHECK, codeword)
+    
+    if syndrome == [0,0,0]:
+        # No error in transmission
+        return (codeword[3:], syndrome)
+    
+    # Find which column of the parity check matrix is identical to the syndrome
+    for i in range(len(PARITY_CHECK[0])):
+        parity_col = [PARITY_CHECK[j][i] for j in range(len(PARITY_CHECK))]
+
+        if parity_col == syndrome:
+            #print("Syndrome: %s, Error bit: %d" % (syndrome, i))
+            # Flip the corresponding bit in the codeword
+            codeword[i] = 0 if codeword[i]==1 else 1
+            #print("Codeword after fix: %s" % codeword)
+            return (codeword[3:], syndrome)
+    
+    raise ValueError("Failed to decode message!")
+#
+
+
+def test_hamming():
+    """
+    Tests Hamming encode and decode for every 4-bit binary sequence, 
+    simulating every possible single bit error between encode and decode.
+    Throws ValueError if any of the "transmitted" messages was not corrected
+    by the decoder properly. 
+    """
+
+    # Generate every possible 4-bit binary message (16 messages)
+    every_message = [ [i,j,k,l] for i in (0,1) for j in (0,1) for k in (0,1) for l in (0,1) ]
+
+    for message in every_message:
+
+        #print("Message to send: %s" % message)
+
+        # Encode
+        message_on_wire = hamming_encode(message)
+        #print("Encoded message: %s" % message_on_wire)
+        
+
+        # Decode without error
+        recieved = message_on_wire
+        (decoded_mes, syndrome) = hamming_decode(recieved)
+        #print("Received message: %s" % decoded_mes)
+        if not decoded_mes == message:
+            print("Error with %s" % message)
+            
+        # Corrupt each bit and try to decode
+        for bit_idx in range(len(message_on_wire)):
+            # Make a copy of the codeword before corrupting it 
+            recieved = message_on_wire.copy()
+            recieved[bit_idx] = 1 if recieved[bit_idx] == 0 else 0
+        
+            # Decode
+            #print("Received codeword: %s" % recieved)
+            (decoded_mes, syndrome) = hamming_decode(recieved.copy())
+            #print("Received message: %s" % decoded_mes)
+            if not decoded_mes == message:
+                print("Error with %s" % message)
+            else:
+                print("%s message = %s base + %s syndrome" % (recieved, decoded_mes, syndrome))
+
+        print("Message corrected successfully: %s" % message)
+
+    print("Every possible 4-bit message with 1 bit error was corrected.")
+
+
+
+# What to run when this python file is invoked (not imported somewhere else)
+if __name__ == "__main__":
+    test_hamming()
