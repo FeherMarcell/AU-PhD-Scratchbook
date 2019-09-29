@@ -2,15 +2,15 @@ import logging
 from sys import exit
 import random
 
-def gf2_add(bit1, bit2):
+def _gf2_add(bit1, bit2):
     # Mod2 addition = XOR
     return int(bool(bit1) != bool(bit2))
 
-def gf2_mul(bit1, bit2):
+def _gf2_mul(bit1, bit2):
     # Mod2 multiplication = AND
     return int(bool(bit1) and bool(bit2))
 
-def mul_vec_mat(vector, matrix):
+def _mul_vec_mat(vector, matrix):
     # The matrix must have the same number of rows as the vector's length
     if len(vector) != len(matrix):
         raise ValueError("Wrong dimensions! Vector length %d must be the same as matrix rows %d" % (len(vector), len(matrix)))
@@ -22,22 +22,21 @@ def mul_vec_mat(vector, matrix):
 
     for (colidx, elem) in enumerate(matrix[0]):
         for row in matrix_rows_to_xor:
-            result[colidx] = gf2_add(result[colidx], row[colidx])
+            result[colidx] = _gf2_add(result[colidx], row[colidx])
         
     return result
 
-
-def mul_mat_vec(matrix, vector):
+def _mul_mat_vec(matrix, vector):
     # Matrix x Vector multiplication
 
     # The matrix must have the same number of cols than the vector's rows
     if len(matrix[0]) != len(vector):
-        raise ValueError("Wrong dimensions! Vector length %d must be the same as matrix columns %d" % (len(vector), len(matrix[0])))
+        raise ValueError("Wrong dimensions! Vector length {} must be the same as matrix columns {}".format(len(vector), len(matrix[0])))
 
     result = [0] * len(matrix)
     for (rowidx, row) in enumerate(matrix):
         for (colidx, col) in enumerate(row):
-            result[rowidx] = gf2_add(result[rowidx], gf2_mul(col, vector[colidx]))
+            result[rowidx] = _gf2_add(result[rowidx], _gf2_mul(col, vector[colidx]))
     
     return result
 
@@ -62,18 +61,25 @@ def hamming_encode(message):
         raise ValueError("Message must be 4 bits!")
 
     # Encoding is simply multiplying the message with the generator matrix
-    return mul_vec_mat(message, GENERATOR)
+    return _mul_vec_mat(message, GENERATOR)
 #
 
 def hamming_decode(codeword):
     # Decode a potentially noisy codeword received after transmission
     # The result will be correct if 0 or 1 bit of the codeword is corrupted.
 
-    syndrome = mul_mat_vec(PARITY_CHECK, codeword)
+    syndrome = _mul_mat_vec(PARITY_CHECK, codeword)
     
+    fixed_codeword = hamming_fix_with_syndrome(codeword, syndrome)
+    return (fixed_codeword[3:], syndrome)
+    
+#
+
+def hamming_fix_with_syndrome(codeword, syndrome):
+
     if syndrome == [0,0,0]:
         # No error in transmission
-        return (codeword[3:], syndrome)
+        return codeword
     
     # Find which column of the parity check matrix is identical to the syndrome
     for i in range(len(PARITY_CHECK[0])):
@@ -84,11 +90,10 @@ def hamming_decode(codeword):
             # Flip the corresponding bit in the codeword
             codeword[i] = 0 if codeword[i]==1 else 1
             #print("Codeword after fix: %s" % codeword)
-            return (codeword[3:], syndrome)
+            return codeword
     
-    raise ValueError("Failed to decode message!")
+    raise ValueError("Failed to fix codeword, no fix found for syndrome {}".format(syndrome))
 #
-
 
 def test_hamming():
     """
