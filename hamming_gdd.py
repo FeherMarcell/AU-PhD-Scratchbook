@@ -62,19 +62,6 @@ def gdd_hamming_compress(data):
         deviations.append(deviation)
     # Finished processing every byte
 
-    # Compute the compression ratio (compressed size / orig size)
-    compressed_size_bits = len(deviations) * 4
-    for b in bases:
-        if isinstance(b, list):
-            # Full base
-            compressed_size_bits = compressed_size_bits + len(b)
-        else:
-            # Pointer to an existing base
-            compressed_size_bits += 0
-    orig_size_bits = len(data) * 8
-
-    print("Compression: %d -> %d bits, %lf percent size reduction" % (orig_size_bits, compressed_size_bits, (100-(100*compressed_size_bits/orig_size_bits))))
-
     return (bases, deviations)
 #
 
@@ -86,6 +73,7 @@ def gdd_hamming_decompress(bases, deviations):
         full_base = base if isinstance(base, list) else bases[base]
         # This deviation belongs to the current base 
         dev = deviations[idx]
+        
         # Cut off the last bit, which is the carry-over last bit of the original input byte
         carryover_bit = dev[3]
         dev = dev[0:3]
@@ -124,6 +112,21 @@ print("File read: %d bytes" % (len(file_contents)))
 #print("File contents: \n%s" % file_contents)
 (bases, devs) = gdd_hamming_compress(file_contents)
 print("Compression ready")
+
+"""
+# Compute the compression ratio (compressed size / orig size)
+compressed_size_bits = len(deviations) * 4
+for b in bases:
+    if isinstance(b, list):
+        # Full base
+        compressed_size_bits = compressed_size_bits + len(b)
+    else:
+        # Pointer to an existing base
+        compressed_size_bits += 0
+orig_size_bits = len(data) * 8
+
+print("Compression: %d -> %d bits, %lf percent size reduction" % (orig_size_bits, compressed_size_bits, (100-(100*compressed_size_bits/orig_size_bits))))
+"""
 
 reconstructed = gdd_hamming_decompress(bases, devs)
 
