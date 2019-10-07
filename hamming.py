@@ -104,6 +104,8 @@ def hamming_fix_with_syndrome(codeword, syndrome):
         return codeword
     
     # Find which column of the parity check matrix is identical to the syndrome
+    # TODO instead of searching for the parity column, we could precompute 
+    # a lookup table that has the correct flipped bit index for every possible syndrome
     for i in range(len(PARITY_CHECK[0])):
         parity_col = [PARITY_CHECK[j][i] for j in range(len(PARITY_CHECK))]
 
