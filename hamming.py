@@ -47,7 +47,14 @@ GENERATOR = [
     [1,0,1, 0,1,0,0],
     [1,1,0, 0,0,1,0],
     [1,1,1, 0,0,0,1]
-] 
+]
+
+_GENERATOR = [
+    [1,0,0,0, 1,0,1],
+    [0,1,0,0, 1,1,1],
+    [0,0,1,0, 1,1,0],
+    [0,0,0,1, 0,1,1]
+]
 
 # The corresponding parity check matrix
 PARITY_CHECK = [
@@ -56,6 +63,11 @@ PARITY_CHECK = [
     [0,0,1, 1,1,0,1]
 ]
 
+_PARITY_CHECK = [
+    [1,1,1,0, 1,0,0],
+    [0,1,1,1, 0,1,0],
+    [1,1,0,1, 0,0,1]
+] 
 def hamming_encode(message):
     if len(message) != 4:
         raise ValueError("Message must be 4 bits!")
@@ -68,11 +80,21 @@ def hamming_decode(codeword):
     # Decode a potentially noisy codeword received after transmission
     # The result will be correct if 0 or 1 bit of the codeword is corrupted.
 
+    # Generate the syndrome vector
     syndrome = _mul_mat_vec(PARITY_CHECK, codeword)
     
+    # Find which bit was flipped using the syndrome, and flip it back
     fixed_codeword = hamming_fix_with_syndrome(codeword, syndrome)
-    return (fixed_codeword[3:], syndrome)
     
+    # Depending on the format of the Generator matrix, the 
+    # data bits are either in the beginning or the end of the
+    # codeword. If the Generator matrix has an identity on the 
+    # left side, the decoded data is at the end of the fixed 
+    # codeword, if the identity is on the right the data bits 
+    # are in the beginning
+    data_bits = fixed_codeword[:4] if GENERATOR[0][:4] == [1,0,0,0] else fixed_codeword[3:]
+    
+    return (data_bits, syndrome)
 #
 
 def hamming_fix_with_syndrome(codeword, syndrome):
@@ -120,7 +142,7 @@ def test_hamming():
         (decoded_mes, syndrome) = hamming_decode(recieved)
         #print("Received message: %s" % decoded_mes)
         if not decoded_mes == message:
-            print("Error with %s" % message)
+            print("Error decoding without error %s. Syndrome: %s Decoded message: %s" % (message, syndrome, decoded_mes))
             
         # Corrupt each bit and try to decode
         for bit_idx in range(len(message_on_wire)):
@@ -133,9 +155,11 @@ def test_hamming():
             (decoded_mes, syndrome) = hamming_decode(recieved.copy())
             #print("Received message: %s" % decoded_mes)
             if not decoded_mes == message:
-                print("Error with %s" % message)
+                print("Error with %s when bit %d is flipped" % (message, bit_idx))
             else:
-                print("%s message = %s base + %s syndrome" % (recieved, decoded_mes, syndrome))
+                pass
+                #print("Message %s corrected when bit %d is flipped"  % (message, bit_idx))
+                #print("%s message = %s base + %s syndrome" % (recieved, decoded_mes, syndrome))
 
         print("Message corrected successfully: %s" % message)
 
