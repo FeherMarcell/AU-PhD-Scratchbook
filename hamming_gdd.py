@@ -2,7 +2,7 @@
 from hamming import hamming_encode, hamming_decode, hamming_fix_with_syndrome
 
 
-def byte_to_bitlist(byte):
+def _byte_to_bitlist(byte):
     # convert to a list of bits
     bitlist = [ int(i) for i in list('{0:0b}'.format(byte))]
     # pad the front with zeroes until it's length is 8
@@ -12,7 +12,7 @@ def byte_to_bitlist(byte):
     return bitlist
 #
 
-def bitlist_to_byte(bitlist):
+def _bitlist_to_byte(bitlist):
     byte = 0
     # Reverse bitlist so we can iterate from LSB to MSB
     list_reversed = bitlist[::-1]
@@ -27,7 +27,7 @@ def bitlist_to_byte(bitlist):
 
 def gdd_hamming_compress(data):
     """
-    Compress the passed list of binary numbers using GDD 
+    Compress the passed list of bytes 
     """ 
 
     bases = []
@@ -38,7 +38,7 @@ def gdd_hamming_compress(data):
     # of each byte. Carry over the last bit into the deviation.
     for byte in data:
         # Convert the next byte to binary form, a list of 0 and 1 (hamming coder expects this format)
-        bitlist = byte_to_bitlist(byte)
+        bitlist = _byte_to_bitlist(byte)
         #print("%d -> %s" % (byte, bitlist))
         # Run a Hamming decoder on the next 7-bit section of the input data
         (base, deviation) = hamming_decode(bitlist[:7])
@@ -90,7 +90,7 @@ def gdd_hamming_decompress(bases, deviations):
         #print("Reconstructed bitlist: %s" % bitlist)
 
         # Convert back from bitlist to byte
-        current_byte = bitlist_to_byte(bitlist)
+        current_byte = _bitlist_to_byte(bitlist)
         #print("Byte: %d" % reconstructed_byte)
         reconstructed_bytes.append(current_byte)
     
@@ -98,44 +98,46 @@ def gdd_hamming_decompress(bases, deviations):
     return bytes(reconstructed_bytes)
 
 
-def readfile(filepath):
-    with open(filepath, "rb") as f:
-        return f.read()
-#
+# What to run when this python file is invoked (not imported somewhere else)
+if __name__ == "__main__":
+    
+    def _readfile(filepath):
+        with open(filepath, "rb") as f:
+            return f.read()
+    #
 
+    file_contents = _readfile("test_files/sample2.pdf")
+    if not file_contents:
+        raise ValueError("File too large! Please select a file that fits into the memory!")
 
-file_contents = readfile("test_files/sample.pdf")
-if not file_contents:
-    raise ValueError("File too large! Please select a file that fits into the memory!")
+    print("File read: %d bytes" % (len(file_contents)))
+    #print("File contents: \n%s" % file_contents)
+    (bases, devs) = gdd_hamming_compress(file_contents)
+    print("Compression ready")
 
-print("File read: %d bytes" % (len(file_contents)))
-#print("File contents: \n%s" % file_contents)
-(bases, devs) = gdd_hamming_compress(file_contents)
-print("Compression ready")
+    
+    # Compute the compression ratio (compressed size / orig size)
+    compressed_size_bits = len(devs) * 4
+    for b in bases:
+        if isinstance(b, list):
+            # Full base
+            compressed_size_bits = compressed_size_bits + len(b)
+        else:
+            # Pointer to an existing base
+            compressed_size_bits += 0
+    orig_size_bits = len(file_contents) * 8
 
-"""
-# Compute the compression ratio (compressed size / orig size)
-compressed_size_bits = len(deviations) * 4
-for b in bases:
-    if isinstance(b, list):
-        # Full base
-        compressed_size_bits = compressed_size_bits + len(b)
+    print("Compression: %d -> %d bits, %lf percent size reduction" % (orig_size_bits, compressed_size_bits, (100-(100*compressed_size_bits/orig_size_bits))))
+    
+
+    reconstructed = gdd_hamming_decompress(bases, devs)
+
+    #print("Decompression ready")
+    #print("Decompressed data: \n%s" % reconstructed)
+
+    if reconstructed == file_contents:
+        print("Decompression correct!")
     else:
-        # Pointer to an existing base
-        compressed_size_bits += 0
-orig_size_bits = len(data) * 8
+        print("ERROR!")
 
-print("Compression: %d -> %d bits, %lf percent size reduction" % (orig_size_bits, compressed_size_bits, (100-(100*compressed_size_bits/orig_size_bits))))
-"""
-
-reconstructed = gdd_hamming_decompress(bases, devs)
-
-#print("Decompression ready")
-#print("Decompressed data: \n%s" % reconstructed)
-
-if reconstructed == file_contents:
-    print("Decompression correct!")
-else:
-    print("ERROR!")
-
-print("Finished.")
+    print("Finished.")
