@@ -1,6 +1,6 @@
 
 from hamming import hamming_encode, hamming_decode, hamming_fix_with_syndrome
-
+import random
 
 def _byte_to_bitlist(byte):
     # convert to a list of bits
@@ -13,6 +13,7 @@ def _byte_to_bitlist(byte):
 #
 
 def _bitlist_to_byte(bitlist):
+    assert len(bitlist) == 8
     byte = 0
     # Reverse bitlist so we can iterate from LSB to MSB
     list_reversed = bitlist[::-1]
@@ -24,8 +25,7 @@ def _bitlist_to_byte(bitlist):
     return byte
 #
 
-
-def gdd_hamming_compress(data):
+def gdd_hamming_74_compress(data):
     """
     Compress the passed list of bytes 
     """ 
@@ -65,7 +65,68 @@ def gdd_hamming_compress(data):
     return (bases, deviations)
 #
 
-def gdd_hamming_decompress(bases, deviations):
+def gdd_hamming_1511_compress(data):
+
+    bases = []
+    deviations = []
+    
+    is_odd = (len(data) % 2 != 0)
+    if is_odd:
+        # Append an extra byte to the data, so it's even long
+        data = bytearray(data)
+        data.append(0)
+    
+    current_bytes = []
+    # Process the data in byte pairs (16 bits), out of which
+    # we Hamming code the first 15 and carry over the last as 
+    # part of the deviation
+    for byte in data:
+        # Convert to bitlist
+        bitlist = _byte_to_bitlist(byte)
+        
+        if not current_bytes:
+            # New byte, start with it
+            current_bytes = bitlist.copy()
+            # Jump to the next byte
+            # (we padded odd length data, there must be a next byte)
+            continue
+        
+
+        # This is the second byte, append the bits of this one
+        # to the current_bytes buffer
+        for bit in bitlist:
+            current_bytes.append(bit)
+        
+        # Run a Hamming decoder on the next 11-bit section of the input data
+        (base, deviation) = hamming_decode(current_bytes[:15])
+
+        # Check if the base is already known. 
+        # This is the actual compression
+        try:
+            # Base already in bases at base_idx
+            base_idx = bases.index(base)
+            # Store only the index ("pointer") to the existing base
+            bases.append(base_idx)
+        except ValueError:
+            # New base, not found in bases. 
+            # Store the whole base 
+            bases.append(base)
+
+        # Carry over the last bit of the byte into the deviation
+        deviation.append(current_bytes[15])
+        # Store the full deviation  
+        deviations.append(deviation)
+
+        # Reset current byte
+        current_bytes = [] 
+    #
+    return (is_odd, bases, deviations)
+    #
+#
+
+
+
+def gdd_hamming_74_decompress(bases, deviations):
     
     reconstructed_bytes = []
     for (idx, base) in enumerate(bases):
@@ -98,6 +159,116 @@ def gdd_hamming_decompress(bases, deviations):
     return bytes(reconstructed_bytes)
 
 
+def gdd_hamming_1511_decompress(bases, deviations, is_padded):
+    
+    reconstructed_bytes = []
+    for (idx, base) in enumerate(bases):
+        # If the current base is a "pointer" to a full base, load it
+        full_base = base if isinstance(base, list) else bases[base]
+        # This deviation belongs to the current base 
+        dev = deviations[idx]
+        
+        # Cut off the last bit, which is the carry-over last bit of the original input byte
+        carryover_bit = dev[4]
+        dev = dev[0:4]
+
+        assert len(dev) == 4, "Deviation should be 4 bits, instead found {} bits".format(len(dev))
+
+        # GDD decode = Hamming encode
+        bitlist = hamming_encode(full_base)
+
+        assert len(bitlist) == 15
+         
+        # Apply the syndrome to recover the original bitlist 
+        # (same process as the second half of Hamming decode)
+        bitlist = hamming_fix_with_syndrome(bitlist, dev)
+
+        # Append the carry-over bit
+        bitlist.append(carryover_bit)
+
+        assert len(bitlist) == 16
+
+        # Convert back from bitlist to byte
+        byte1 = _bitlist_to_byte(bitlist[:8])
+        reconstructed_bytes.append(byte1)
+        
+
+        byte2 = _bitlist_to_byte(bitlist[8:])
+        reconstructed_bytes.append(byte2)
+
+    
+    # Done reconstructing the whole data
+
+    if is_padded:
+       # Cut off the last byte, which is a padding
+       reconstructed_bytes = reconstructed_bytes[:-1]
+
+    return bytes(reconstructed_bytes)
+
+
+def test_compress_h74(file_contents):
+    """
+    Uses Hamming(7,4) to compress and decompress the passed array
+    of bytes. Checks correct decompression and prints the compression
+    ratio to the console.
+    """
+
+    (bases, devs) = gdd_hamming_74_compress(file_contents)
+    print("Compression ready")
+
+    # Compute the compression ratio (compressed size / orig size)
+    compressed_size_bits = len(devs) * len(devs[0])
+    for b in bases:
+        if isinstance(b, list):
+            # Full base
+            compressed_size_bits = compressed_size_bits + len(b)
+        else:
+            # Pointer to an existing base
+            compressed_size_bits += 0
+    
+    # Original data size in bits
+    orig_size_bits = len(file_contents) * 8
+
+    print("Compression: %d -> %d bits, %lf percent size reduction" % (orig_size_bits, compressed_size_bits, (100-(100*compressed_size_bits/orig_size_bits))))
+    
+    # Decompress
+    reconstructed = gdd_hamming_74_decompress(bases, devs)
+
+    #print("Decompression ready")
+    #print("Decompressed data: \n%s" % reconstructed)
+
+    if reconstructed == file_contents:
+        print("Decompression correct!")
+    else:
+        print("ERROR!")
+#
+
+
+def test_1115(data):
+    (is_padded, bases, devs) = gdd_hamming_1511_compress(data)
+
+    reconstructed = gdd_hamming_1511_decompress(bases, devs, is_padded)
+    # Compute the compression ratio (compressed size / orig size)
+    compressed_size_bits = len(devs) * len(devs[0])
+    for b in bases:
+        if isinstance(b, list):
+            # Full base
+            compressed_size_bits = compressed_size_bits + len(b)
+        else:
+            # Pointer to an existing base
+            compressed_size_bits += 0
+    
+    # Original data size in bits
+    orig_size_bits = len(data) * 8
+
+    print("Compression: %d -> %d bits, %lf percent size reduction" % (orig_size_bits, compressed_size_bits, (100-(100*compressed_size_bits/orig_size_bits))))
+    
+    if reconstructed != data:
+        print("Error!")
+    else:
+        print("Success!")
+
+
 # What to run when this python file is invoked (not imported somewhere else)
 if __name__ == "__main__":
     
@@ -111,33 +282,8 @@ if __name__ == "__main__":
         raise ValueError("File too large! Please select a file that fits into the memory!")
 
     print("File read: %d bytes" % (len(file_contents)))
-    #print("File contents: \n%s" % file_contents)
-    (bases, devs) = gdd_hamming_compress(file_contents)
-    print("Compression ready")
-
+    test_1115(file_contents)
+    #test_compress_h74(file_contents)
     
-    # Compute the compression ratio (compressed size / orig size)
-    compressed_size_bits = len(devs) * 4
-    for b in bases:
-        if isinstance(b, list):
-            # Full base
-            compressed_size_bits = compressed_size_bits + len(b)
-        else:
-            # Pointer to an existing base
-            compressed_size_bits += 0
-    orig_size_bits = len(file_contents) * 8
-
-    print("Compression: %d -> %d bits, %lf percent size reduction" % (orig_size_bits, compressed_size_bits, (100-(100*compressed_size_bits/orig_size_bits))))
-    
-
-    reconstructed = gdd_hamming_decompress(bases, devs)
-
-    #print("Decompression ready")
-    #print("Decompressed data: \n%s" % reconstructed)
-
-    if reconstructed == file_contents:
-        print("Decompression correct!")
-    else:
-        print("ERROR!")
 
     print("Finished.")
