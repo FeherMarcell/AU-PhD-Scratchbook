@@ -206,7 +206,7 @@ def gdd_hamming_1511_decompress(bases, deviations, is_padded):
     return bytes(reconstructed_bytes)
 
 
-def test_compress_h74(file_contents):
+def test_compress_7_4(file_contents):
     """
     Uses Hamming(7,4) to compress and decompress the passed array
     of bytes. Checks correct decompression and prints the compression
@@ -244,10 +244,24 @@ def test_compress_h74(file_contents):
 #
 
 
-def test_1115(data):
+def test_compress_15_11(data):
+    """
+    Tests compressing and decompressing the given data
+    using Hamming(15,11). It prints the compression ratio 
+    to the console. 
+    """
+
+    # Compress
     (is_padded, bases, devs) = gdd_hamming_1511_compress(data)
 
+    # Decompress
     reconstructed = gdd_hamming_1511_decompress(bases, devs, is_padded)
+
+    if reconstructed != data:
+        print("Error! Reconstructed data is different than original!")
+    else:
+        print("Correct decompression!")
+
     # Compute the compression ratio (compressed size / orig size)
     compressed_size_bits = len(devs) * len(devs[0])
     for b in bases:
@@ -262,11 +276,8 @@ def test_1115(data):
     orig_size_bits = len(data) * 8
 
     print("Compression: %d -> %d bits, %lf percent size reduction" % (orig_size_bits, compressed_size_bits, (100-(100*compressed_size_bits/orig_size_bits))))
+#
     
-    if reconstructed != data:
-        print("Error!")
-    else:
-        print("Success!")
 
 
 # What to run when this python file is invoked (not imported somewhere else)
@@ -282,8 +293,8 @@ if __name__ == "__main__":
         raise ValueError("File too large! Please select a file that fits into the memory!")
 
     print("File read: %d bytes" % (len(file_contents)))
-    test_1115(file_contents)
-    #test_compress_h74(file_contents)
+    test_compress_15_11(file_contents)
+    test_compress_7_4(file_contents)
     
 
     print("Finished.")
